@@ -9,6 +9,7 @@ from select import select
 from select import error as SelectError
 from signal import signal, SIGHUP, SIGCHLD, SIGINT, SIGKILL, SIGTERM
 from subprocess import Popen, PIPE, STDOUT
+import sys
 
 dev_null = open('/dev/null', 'r')
 
@@ -84,6 +85,14 @@ class Process(object):
 
     def log(self, message, *args):
         log(self.color_no, self.name, message % args)
+
+system_color_no = 7
+
+class WatchdogProcess(Process):
+    def __init__(self, directories):
+        command = '{} -u -m heywood.watchdog {}'.format(sys.executable,
+                                                        ' '.join(directories))
+        Process.__init__(self, 'watch', command, system_color_no)
 
 class ProcessManager(object):
     'I keep track of ALL THE CHILDREN.'
@@ -167,4 +176,7 @@ class ProcessManager(object):
             self.children.append(child)
 
     def log(self, message, *args):
-        log(7, 'system', message % args)
+        log(system_color_no, 'system', message % args)
+
+    def watch(self, directories):
+        self.children.append(WatchdogProcess(directories))

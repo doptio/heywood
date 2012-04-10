@@ -8,16 +8,24 @@ Knows a few extra tricks:
  * Restart all processes on file-changes (using pyinotify).
 '''
 
+from optparse import OptionParser
+
 from heywood.manager import ProcessManager
 
-def main():
+def main(watch):
     manager = ProcessManager()
     with open('Procfile') as f:
         manager.read_procfile(f)
+    if watch:
+        manager.watch(watch)
     manager.go()
 
 def console_script():
-    main()
+    opts, args = parser.parse_args()
+    main(opts.watch)
+
+parser = OptionParser()
+parser.add_option('-w', '--watch', action='append', default=[])
 
 if __name__ == '__main__':
     console_script()
