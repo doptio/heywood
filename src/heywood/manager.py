@@ -7,7 +7,7 @@ import fcntl
 import os
 from select import select
 from select import error as SelectError
-from signal import signal, SIGHUP, SIGTERM, SIGINT
+from signal import signal, SIGCHLD, SIGTERM, SIGINT
 from subprocess import Popen, PIPE, STDOUT
 
 dev_null = open('/dev/null', 'r')
@@ -36,11 +36,28 @@ class Process(object):
         # FIXME - need process groups!
         self.process.kill()
 
+    @property
+    def alive(self):
+        return self.process and self.process.poll() is None
+
     def reap(self):
-        pass
+        if self.alive:
+            return False
+
+        self.process.wait()
+        self.drain()
+        if self.process.returncode < 0:
+            self.log('killed by signal %d', -self.process.returncode)
+        elif self.process.returncode > 0:
+            self.log('exited with code %d', self.process.returncode)
+        else:
+            self.log('exited normally')
+
+        self.process = None
+        return True
 
     def spawn(self):
-        # FIXME - need process groups!
+        # FIXME - need process groups! (use preexec_fn)
         self.process = Popen(self.command, shell=True,
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT)
         self.eof = False
@@ -55,10 +72,17 @@ class Process(object):
         return self.process.stdout.fileno()
 
     def drain(self):
-        data = self.process.stdout.read(8192)
+        try:
+            data = self.process.stdout.read(8192)
+        except IOError:
+            return
+
         if data == '':
             self.eof = True
-        return data
+
+        for line in data.strip('\n').split('\n'):
+            if line.strip():
+                self.log('%s', line)
 
     def log(self, message, *args):
         log(self.color_no, self.name, message % args)
@@ -67,29 +91,35 @@ class ProcessManager(object):
     'I keep track of ALL THE CHILDREN.'
 
     def __init__(self):
-        self.children = {}
+        self.children = []
+        self.reaping_needed = False
+        self.shutdown = False
 
     def go(self):
         self.install_signal_handlers()
         self.spawn_all()
-
-        try:
-            self.loop()
-
-        finally:
-            self.log('sending SIGKILL to all children')
-            for p in self.children.values():
-                p.kill()
+        self.loop()
 
     def loop(self):
-        self.running = True
-        while self.running:
+        while self.children:
+            if self.reaping_needed:
+                self.reap_zombies()
             readable = self.select()
             self.drain(readable)
 
+    def reap_zombies(self):
+        for child in self.children:
+            if not child.alive:
+                child.reap()
+                if not self.shutdown:
+                    child.spawn()
+
+        if self.shutdown:
+            self.children = [c for c in self.children if c.alive]
+
     def select(self, timeout=1):
         pipes = dict((child.fileno(), child)
-                     for child in self.children.values()
+                     for child in self.children
                      if not child.eof)
         try:
             readable, _, _ = select(pipes.keys(), [], [], timeout)
@@ -99,36 +129,39 @@ class ProcessManager(object):
 
     def drain(self, children):
         for child in children:
-            data = child.drain()
-            for line in data.strip('\n').split('\n'):
-                if line.strip():
-                    child.log(line)
+            child.drain()
 
     def install_signal_handlers(self):
-        # FIXME - need to reap zombies
-        signal(SIGINT, self.signal_handler)
-        signal(SIGTERM, self.signal_handler)
-        signal(SIGHUP, self.signal_handler)
+        signal(SIGINT, self.termination_handler)
+        signal(SIGTERM, self.termination_handler)
+        signal(SIGCHLD, self.zombie_handler)
 
     def spawn_all(self):
-        for child in self.children.values():
+        for child in self.children:
             child.spawn()
 
-    def signal_handler(self, signo, frame):
-        self.shutdown = True
-        self.running = False
+    def zombie_handler(self, signo, frame):
+        self.reaping_needed = True
 
-        # FIXME - escalate to SIGKILL after two attempts?
-        self.log('sending SIGTERM to all children')
-        for p in self.children.values():
-            p.terminate()
+    def termination_handler(self, signo, frame):
+        if self.shutdown:
+            self.log('sending SIGKILL to all children')
+            for p in self.children:
+                p.kill()
+
+        else:
+            self.log('sending SIGTERM to all children')
+            for p in self.children:
+                p.terminate()
+
+        self.shutdown = True
 
     def read_procfile(self, f):
         for i, line in enumerate(f):
             name, command = line.strip().split(':', 1)
             color_no = 1 + i % 6
             child = Process(name.strip(), command.strip(), color_no)
-            self.children[name.strip()] = child
+            self.children.append(child)
 
     def log(self, message, *args):
         log(7, 'system', message % args)
