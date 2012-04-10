@@ -25,16 +25,21 @@ class ProcessManager():
         self.running = False
         self.procfile = {}
         self.processes = []
-        self.loggers = {
-            'system': _new_logger('system', color=7),
-        }
+        self.syslogger = _new_logger('system', color=7)
+        self.loggers = {}
 
-    def start_all(self):
-        for i, (name, command) in enumerate(self.procfile.items()):
-            p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
-            self.processes.append(p)
-            self.loggers[p.pid] = logger = _new_logger(name, color=1 + i % 6)
-            logger.info('started with pid %d', p.pid)
+    def go(self):
+        self.install_signal_handlers()
+        self.start_all()
+
+        try:
+            self.loop()
+            #self.shutdown()
+
+        finally:
+            self.syslogger.info('sending SIGKILL to all processes')
+            for p in self.processes:
+                p.kill()
 
     def loop(self):
         fp_to_p = {}
@@ -51,42 +56,49 @@ class ProcessManager():
             fl = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
-        try:
-            self.running = True
-            while self.running:
+        self.running = True
+        while self.running:
+            try:
                 rready, _, _ = select(rlist, [], [], 1)
-                for r in rready:
-                    p = fp_to_p[r]
-                    logger = self.loggers[p.pid]
+            except SelectError:
+                continue
 
-                    data = r.read(8192)
-                    if data == '':
-                        # This pipe is empty, remove it.
-                        # FIXME - reap and restart child.
-                        rlist.remove(r)
-                        continue
+            for r in rready:
+                p = fp_to_p[r]
+                logger = self.loggers[p.pid]
 
-                    for line in data.strip('\n').split('\n'):
-                        if line.strip():
-                            logger.info(line)
+                data = r.read(8192)
+                if data == '':
+                    # This pipe is empty, remove it.
+                    # FIXME - reap and restart child.
+                    rlist.remove(r)
+                    continue
 
-        except SelectError:
-            pass
-
-        finally:
-            logger = self.loggers['system']
-            logger.info('sending SIGTERM to all processes')
-            for p in self.processes:
-                p.terminate()
-
-    def signal_handler(self, signo, frame):
-        self.running = False
+                for line in data.strip('\n').split('\n'):
+                    if line.strip():
+                        logger.info(line)
 
     def install_signal_handlers(self):
         # FIXME - need to reap zombies
         signal(SIGINT, self.signal_handler)
         signal(SIGTERM, self.signal_handler)
         signal(SIGHUP, self.signal_handler)
+
+    def start_all(self):
+        for i, (name, command) in enumerate(self.procfile.items()):
+            p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
+            self.processes.append(p)
+            self.loggers[p.pid] = logger = _new_logger(name, color=1 + i % 6)
+            logger.info('started with pid %d', p.pid)
+
+    def signal_handler(self, signo, frame):
+        self.shutdown = True
+        # FIXME - Don't set running False until we've reaped all zombies.
+        self.running = False
+
+        self.syslogger.info('sending SIGTERM to all processes')
+        for p in self.processes:
+            p.terminate()
 
     def read_procfile(self, f):
         for line in f:

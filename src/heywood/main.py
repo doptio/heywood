@@ -14,9 +14,7 @@ def main():
     manager = ProcessManager()
     with open('Procfile') as f:
         manager.read_procfile(f)
-    manager.install_signal_handlers()
-    manager.start_all()
-    manager.loop()
+    manager.go()
 
 def console_script():
     main()
