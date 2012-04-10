@@ -55,7 +55,7 @@ class Process(object):
         os.setsid()
 
     def spawn(self):
-        self.process = Popen(self.command, shell=True,
+        self.process = Popen(self.command.split(),
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT,
                              preexec_fn=self.set_process_group)
         self.eof = False
