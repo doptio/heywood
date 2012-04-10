@@ -21,6 +21,8 @@ except ImportError:
     """
     raise
 
+logger = logging.getLogger('heywood.watchdog')
+
 class GenericEventHandler(pyi.ProcessEvent):
     """Handles events on specific dirs, then call call the callback method
 
@@ -88,99 +90,21 @@ class GenericEventHandler(pyi.ProcessEvent):
     process_IN_MOVED_TO = changed
 
 class GunicornHUP(GenericEventHandler):
-    appname = None
-    known_pid = None
-    wait_time = 500
+    wait_time = 250
     timer = None
 
     def callback(self, event):
-        if self.known_pid is not None:
-            try:
-                os.kill(self.known_pid, 0)
-            except OSError, e:
-                if e.errno != 3:
-                    raise
-                self.known_pid = None
-
-        if self.known_pid is None:
-            #gunicorn: master [website]
-            mre = re.compile(r'^gunicorn:\s+master\s+\[(.*)\]')
-            pids = [ int(pid) for pid in os.listdir('/proc') if pid.isdigit() ]
-            for pid in pids:
-                path = os.path.join('/proc', str(pid), 'cmdline')
-                try:
-                    # process might be gone between ls and open
-                    data = open(path).read()
-                except:
-                    continue
-
-                found = mre.search(data)
-                if not found:
-                    continue
-
-                appname = found.group(1)
-                if self.appname is None or appname == self.appname:
-                    self.known_pid = pid
-                    logger.info("found master process %d (%s)" % (
-                       self.known_pid, appname) )
-                    break
-            else:
-                msg = "Could not find gunicorn master process"
-                if self.appname:
-                    msg += " for %s" % self.appname
-                logger.error(msg)
-
-                return
-
-        def kill(pid):
-            logger.info("HUP: %d" % pid)
-            os.kill(pid, signal.SIGHUP)
+        def kill_it_with_fire():
+            print('HUP\'ping parent!')
+            os.kill(os.getppid(), signal.SIGHUP)
 
         if self.timer:
             self.timer.cancel()
-
-        self.timer = Timer(self.wait_time / 1000.0, kill, [ self.known_pid ])
+        self.timer = Timer(self.wait_time / 1000.0, kill_it_with_fire)
         self.timer.start()
 
 if __name__ == '__main__':
-    usage = "usage: %prog [-q|-v] [-w wait] [-a app_module] [watch_dirs]"
+    logging.basicConfig(level=logging.INFO)
 
-    parser = OptionParser(usage)
-    parser.add_option("-a", dest="appmodule", help="application module")
-    parser.add_option("-w", dest="wait", type="int", default=500, help="wait"
-        " interval milliseconds before sending HUP [default: %default]")
-    parser.add_option("-v", dest="verbose", action="store_true", default=False,
-        help="be more verbose")
-    parser.add_option("-q", dest="quiet", action="store_true", default=False,
-        help="quiet")
-
-    (options, args) = parser.parse_args()
-
-
-    watchdirs = args or filter(os.path.isdir, sys.path)
-
-    # Setup logging "alamano" since pyinotify already sets up some of its soup
-    if options.quiet and options.verbose:
-        parser.error("quiet and verbose options are both set")
-    elif options.quiet:
-        loglevel = "ERROR"
-    elif options.verbose:
-        loglevel = "DEBUG"
-    else:
-        loglevel = "INFO"
-
-    logging.setLoggerClass(logging.Logger)
-    logger = logging.getLogger("zulu")
-    loghandler = logging.StreamHandler()
-    loghandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-
-    logger.addHandler(loghandler)
-    logger.setLevel(logging.getLevelName(loglevel))
-
-    handler = GunicornHUP(watchdirs)
-    handler.appname = options.appmodule
-    handler.wait_time = max(20, options.wait)
-
-    parser.destroy()
-
+    handler = GunicornHUP(sys.argv[1:])
     handler.loop()
