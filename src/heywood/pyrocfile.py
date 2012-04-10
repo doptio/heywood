@@ -3,6 +3,7 @@
 # Released in the Public Domain
 
 import argparse, logging, os.path, random, re, select, signal, subprocess
+import fcntl
 
 def _new_logger(name, color=None):
     logger = logging.getLogger(name)
@@ -40,6 +41,13 @@ class ProcessManager():
             fp_to_p[p.stdout] = p
             fp_to_p[p.stderr] = p
             rlist.extend([p.stdout, p.stderr])
+
+        # Make all pipes non-blocking.
+        for pipe in rlist:
+            fd = pipe.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
         try:
             self.running = True
             while self.running:
