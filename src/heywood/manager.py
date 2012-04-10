@@ -7,7 +7,7 @@ import fcntl
 import os
 from select import select
 from select import error as SelectError
-from signal import signal, SIGCHLD, SIGTERM, SIGINT, SIGKILL, SIGTERM
+from signal import signal, SIGHUP, SIGCHLD, SIGINT, SIGKILL, SIGTERM
 from subprocess import Popen, PIPE, STDOUT
 
 dev_null = open('/dev/null', 'r')
@@ -134,6 +134,7 @@ class ProcessManager(object):
     def install_signal_handlers(self):
         signal(SIGINT, self.termination_handler)
         signal(SIGTERM, self.termination_handler)
+        signal(SIGHUP, self.restart_handler)
         signal(SIGCHLD, self.zombie_handler)
 
     def spawn_all(self):
@@ -143,17 +144,20 @@ class ProcessManager(object):
     def zombie_handler(self, signo, frame):
         self.reaping_needed = True
 
+    def restart_handler(self, signo, frame):
+        self.signal_all(SIGTERM)
+
     def termination_handler(self, signo, frame):
         if self.shutdown:
-            signo, name = SIGKILL, 'KILL'
+            self.signal_all(SIGKILL)
         else:
-            signo, name = SIGTERM, 'TERM'
+            self.signal_all(SIGTERM)
+        self.shutdown = True
 
-        self.log('sending SIG%s to all children', name)
+    def signal_all(self, signo):
+        self.log('sending signal %d to all children', signo)
         for child in self.children:
             child.signal(signo)
-
-        self.shutdown = True
 
     def read_procfile(self, f):
         for i, line in enumerate(f):
