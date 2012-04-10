@@ -1,4 +1,4 @@
-'I manager children.'
+'A menagerie of children.'
 
 from __future__ import unicode_literals, division
 
@@ -8,7 +8,54 @@ import os
 from select import select
 from select import error as SelectError
 from signal import signal, SIGHUP, SIGTERM, SIGINT
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, STDOUT
+
+dev_null = open('/dev/null', 'r')
+
+class Process(object):
+    'I keep track of one child.'
+
+    def __init__(self, name, command, color_no):
+        self.name = name
+        self.command = command
+        self.logger = _new_logger(name, color_no)
+        self.process = None
+        self.eof = False
+
+    def terminate(self):
+        # FIXME - need process groups!
+        self.process.terminate()
+
+    def kill(self):
+        # FIXME - need process groups!
+        self.process.kill()
+
+    def reap(self):
+        pass
+
+    def spawn(self):
+        # FIXME - need process groups!
+        self.process = Popen(self.command, shell=True,
+                             stdin=dev_null, stdout=PIPE, stderr=STDOUT)
+        self.eof = False
+        self.log('started with pid %d', self.process.pid)
+
+        # Make pipes non-blocking.
+        fd = self.process.stdout.fileno()
+        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+    def fileno(self):
+        return self.process.stdout.fileno()
+
+    def drain(self):
+        data = self.process.stdout.read(8192)
+        if data == '':
+            self.eof = True
+        return data
+
+    def log(self, *args):
+        self.logger.info(*args)
 
 def _new_logger(name, color=None):
     logger = getLogger(name)
@@ -20,63 +67,47 @@ def _new_logger(name, color=None):
     logger.setLevel(INFO)
     return logger
 
-class ProcessManager():
+class ProcessManager(object):
+    'I keep track of ALL THE CHILDREN.'
+
     def __init__(self):
-        self.running = False
-        self.procfile = {}
-        self.processes = []
+        self.children = {}
         self.syslogger = _new_logger('system', color=7)
-        self.loggers = {}
 
     def go(self):
         self.install_signal_handlers()
-        self.start_all()
+        self.spawn_all()
 
         try:
             self.loop()
-            #self.shutdown()
 
         finally:
-            self.syslogger.info('sending SIGKILL to all processes')
-            for p in self.processes:
+            self.syslogger.info('sending SIGKILL to all children')
+            for p in self.children.values():
                 p.kill()
 
     def loop(self):
-        fp_to_p = {}
-        rlist = []
-        for p in self.processes:
-            fp_to_p[p.stdout] = p
-            fp_to_p[p.stderr] = p
-            rlist.extend([p.stdout, p.stderr])
-
-        # FIXME - Do this in start_all.
-        # Make all pipes non-blocking.
-        for pipe in rlist:
-            fd = pipe.fileno()
-            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-
         self.running = True
         while self.running:
-            try:
-                rready, _, _ = select(rlist, [], [], 1)
-            except SelectError:
-                continue
+            readable = self.select()
+            self.drain(readable)
 
-            for r in rready:
-                p = fp_to_p[r]
-                logger = self.loggers[p.pid]
+    def select(self, timeout=1):
+        pipes = dict((child.fileno(), child)
+                     for child in self.children.values()
+                     if not child.eof)
+        try:
+            readable, _, _ = select(pipes.keys(), [], [], timeout)
+        except SelectError:
+            readable = []
+        return [pipes[fd] for fd in readable]
 
-                data = r.read(8192)
-                if data == '':
-                    # This pipe is empty, remove it.
-                    # FIXME - reap and restart child.
-                    rlist.remove(r)
-                    continue
-
-                for line in data.strip('\n').split('\n'):
-                    if line.strip():
-                        logger.info(line)
+    def drain(self, children):
+        for child in children:
+            data = child.drain()
+            for line in data.strip('\n').split('\n'):
+                if line.strip():
+                    child.log(line)
 
     def install_signal_handlers(self):
         # FIXME - need to reap zombies
@@ -84,23 +115,22 @@ class ProcessManager():
         signal(SIGTERM, self.signal_handler)
         signal(SIGHUP, self.signal_handler)
 
-    def start_all(self):
-        for i, (name, command) in enumerate(self.procfile.items()):
-            p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
-            self.processes.append(p)
-            self.loggers[p.pid] = logger = _new_logger(name, color=1 + i % 6)
-            logger.info('started with pid %d', p.pid)
+    def spawn_all(self):
+        for child in self.children.values():
+            child.spawn()
 
     def signal_handler(self, signo, frame):
         self.shutdown = True
-        # FIXME - Don't set running False until we've reaped all zombies.
         self.running = False
 
-        self.syslogger.info('sending SIGTERM to all processes')
-        for p in self.processes:
+        # FIXME - escalate to SIGKILL after two attempts?
+        self.syslogger.info('sending SIGTERM to all children')
+        for p in self.children.values():
             p.terminate()
 
     def read_procfile(self, f):
-        for line in f:
+        for i, line in enumerate(f):
             name, command = line.strip().split(':', 1)
-            self.procfile[name.strip()] = command.strip()
+            color_no = 1 + i % 6
+            child = Process(name.strip(), command.strip(), color_no)
+            self.children[name.strip()] = child
