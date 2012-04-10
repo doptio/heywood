@@ -16,25 +16,24 @@ def _new_logger(name, color=None):
     return logger
 
 class ProcessManager():
-    def __init__(self, procfile, concurrencies, env, cwd):
-        self.procfile = procfile
-        self.concurrencies = concurrencies
-        self.env = env
-        self.cwd = cwd
-        self.processes = []
-        self.loggers = {}
+    def __init__(self):
         self.running = False
-        self.loggers['system'] = _new_logger('system', color=9)
+        self.procfile = {}
+        self.processes = []
+        self.loggers = {
+            'system': _new_logger('system', color=9),
+        }
 
     def start_all(self):
-        for id, command in self.procfile.iteritems():
-            for i in xrange(int(self.concurrencies.get(id, 1))):
-                p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, env=self.env, cwd=self.cwd)
-                self.processes.append(p)
-                self.loggers[p.pid] = logger = _new_logger('%s.%d' % (id, i+1))
-                logger.info('started with pid %d', p.pid)
+        for id, command in self.procfile.items():
+            p = subprocess.Popen(command, shell=True,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+            self.processes.append(p)
+            self.loggers[p.pid] = logger = _new_logger(id)
+            logger.info('started with pid %d', p.pid)
 
-    def watch(self):
+    def loop(self):
         fp_to_p = {}
         rlist = []
         for p in self.processes:
@@ -42,6 +41,7 @@ class ProcessManager():
             fp_to_p[p.stderr] = p
             rlist.extend([p.stdout, p.stderr])
 
+        # FIXME - Do this in start_all.
         # Make all pipes non-blocking.
         for pipe in rlist:
             fd = pipe.fileno()
@@ -59,6 +59,7 @@ class ProcessManager():
                     data = r.read(8192)
                     if data == '':
                         # This pipe is empty, remove it.
+                        # FIXME - reap and restart child.
                         rlist.remove(r)
                         continue
 
@@ -67,51 +68,34 @@ class ProcessManager():
                             logger.info(line)
         except select.error:
             pass
+
         finally:
             logger = self.loggers['system']
             logger.info('sending SIGTERM to all processes')
             for p in self.processes:
                 p.terminate()
 
-    def interrupt(self):
+    def signal_handler(self, signo, frame):
         self.running = False
 
+    def install_signal_handlers(self):
+        # FIXME - need to reap zombies
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGHUP, self.signal_handler)
+
+    def read_procfile(self, f):
+        for line in f:
+            name, command = line.strip().split(':', 1)
+            self.procfile[name.strip()] = command.strip()
+
 def main():
-    parser = argparse.ArgumentParser(description='Work with Procfiles.')
-    parser.add_argument('--concurrency', '-c',
-        help='Specify the number of each process type to run. The value passed in should be in the format process=num,process=num')
-    parser.add_argument('--env', '-e',
-        help='Specify an alternate environment file. You can specify more than one file by using: --env file1,file2.')
-    parser.add_argument('--procfile', '-f', default='Procfile',
-        help='Specify an alternate location for the application\'s Procfile. This file\'s containing directory will be assumed to be the root directory of the application.')
-    args = parser.parse_args()
-
-    procfile = {}
-    with open(args.procfile) as f:
-        for line in f.readlines():
-            match = re.search(r'([a-zA-Z0-9_-]+):(.*)', line)
-            if not match:
-                raise Exception('Bad Procfile line')
-            procfile[match.group(1)] = match.group(2)
-    cwd = os.path.dirname(os.path.realpath(args.procfile))
-
-    concurrencies = dict([kv.split('=') for kv in args.concurrency.split(',')]) if args.concurrency else {}
-
-    env = None
-    if args.env:
-        env = {}
-        for envfname in args.env.split(','):
-            with open(envfname) as f:
-                env.update(dict([ l.split('=') for l in f ]))
-    
-    process_manager = ProcessManager(procfile, concurrencies, env, cwd)
-    process_manager.start_all()
-
-    def _interrupt(signum, frame):
-        print "SIGINT received"
-        process_manager.interrupt()
-    signal.signal(signal.SIGINT, _interrupt)
-    process_manager.watch()
+    manager = ProcessManager()
+    with open('Procfile') as f:
+        manager.read_procfile(f)
+    manager.install_signal_handlers()
+    manager.start_all()
+    manager.loop()
 
 if __name__ == '__main__':
     main()
