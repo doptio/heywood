@@ -2,14 +2,17 @@
 
 from __future__ import unicode_literals, division
 
+from collections import namedtuple
 from datetime import datetime
 import fcntl
+from heapq import heappop, heappush
 import os
 from select import select
 from select import error as SelectError
 from signal import signal, SIGHUP, SIGCHLD, SIGINT, SIGKILL, SIGTERM
 from subprocess import Popen, PIPE, STDOUT
 import sys
+from time import time
 
 dev_null = open('/dev/null', 'r')
 
@@ -30,7 +33,8 @@ class BaseProcess(object):
         self.eof = False
 
     def signal(self, signo):
-        os.killpg(self.process.pid, signo)
+        if self.process:
+            os.killpg(self.process.pid, signo)
 
     @property
     def alive(self):
@@ -40,14 +44,15 @@ class BaseProcess(object):
         if self.alive:
             return False
 
-        self.process.wait()
-        self.drain()
-        if self.process.returncode < 0:
-            self.log('killed by signal %d', -self.process.returncode)
-        elif self.process.returncode > 0:
-            self.log('exited with code %d', self.process.returncode)
-        elif not isinstance(self, Daemon):
-            self.log('exited normally')
+        if self.process:
+            self.process.wait()
+            self.drain()
+            if self.process.returncode < 0:
+                self.log('killed by signal %d', -self.process.returncode)
+            elif self.process.returncode > 0:
+                self.log('exited with code %d', self.process.returncode)
+            elif not isinstance(self, Daemon):
+                self.log('exited normally')
 
         self.process = None
         return True
@@ -69,9 +74,13 @@ class BaseProcess(object):
         fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
     def fileno(self):
-        return self.process.stdout.fileno()
+        if self.process:
+            return self.process.stdout.fileno()
 
     def drain(self):
+        if not self.process:
+            return
+
         try:
             data = self.process.stdout.read(8192)
         except IOError:
@@ -102,32 +111,46 @@ class WatchdogProcess(Daemon):
                                                         ' '.join(directories))
         Daemon.__init__(self, 'watch', command)
 
+Deferred = namedtuple('Deferred', 'ready callback')
+
 class ProcessManager(object):
     'I keep track of ALL THE CHILDREN.'
 
     def __init__(self):
         self.children = []
-        self.reaping_needed = False
+        self.deferred = []
         self.shutdown = False
 
     def go(self):
         self.install_signal_handlers()
         self.spawn_all()
-        self.loop()
+        try:
+            self.loop()
+        finally:
+            # This is here in case there are bugs inhere somewhere.
+            self.signal_all(SIGKILL, BaseProcess, silent=True)
 
     def loop(self):
         while self.children:
-            if self.reaping_needed:
-                self.reap_zombies()
+            self.do_ready_deferreds()
+
             readable = self.select()
             self.drain(readable)
+
+    def do_ready_deferreds(self):
+        while self.deferred and self.deferred[0].ready < time():
+            job = heappop(self.deferred)
+            job.callback()
+
+    def defer(self, ready, callback):
+        heappush(self.deferred, Deferred(ready, callback))
 
     def reap_zombies(self):
         for child in self.children:
             if not child.alive:
                 child.reap()
                 if not self.shutdown:
-                    child.spawn()
+                    self.defer(time() + 1, child.spawn)
 
         if self.shutdown:
             self.children = [c for c in self.children if c.alive]
@@ -138,8 +161,9 @@ class ProcessManager(object):
                      if not child.eof)
         if not pipes:
             return []
+        fds = filter(None, pipes.keys())
         try:
-            readable, _, _ = select(pipes.keys(), [], [], timeout)
+            readable, _, _ = select(fds, [], [], timeout)
         except SelectError:
             readable = []
         return [pipes[fd] for fd in readable]
@@ -159,10 +183,13 @@ class ProcessManager(object):
             child.spawn()
 
     def zombie_handler(self, signo, frame):
-        self.reaping_needed = True
+        self.defer(0, self.reap_zombies)
+
+    def restart_all(self):
+        self.signal_all(SIGTERM, Process)
 
     def restart_handler(self, signo, frame):
-        self.signal_all(SIGTERM, Process)
+        self.defer(0, self.restart_all)
 
     def termination_handler(self, signo, frame):
         if self.shutdown:
@@ -171,8 +198,9 @@ class ProcessManager(object):
             self.signal_all(SIGTERM, BaseProcess)
         self.shutdown = True
 
-    def signal_all(self, signo, klass):
-        self.log('sending signal %d to all children', signo)
+    def signal_all(self, signo, klass, silent=False):
+        if not silent:
+            self.log('sending signal %d to all children', signo)
         for child in self.children:
             if isinstance(child, klass):
                 child.signal(signo)
