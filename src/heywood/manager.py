@@ -7,7 +7,7 @@ import fcntl
 import os
 from select import select
 from select import error as SelectError
-from signal import signal, SIGCHLD, SIGTERM, SIGINT
+from signal import signal, SIGCHLD, SIGTERM, SIGINT, SIGKILL, SIGTERM
 from subprocess import Popen, PIPE, STDOUT
 
 dev_null = open('/dev/null', 'r')
@@ -28,13 +28,8 @@ class Process(object):
         self.process = None
         self.eof = False
 
-    def terminate(self):
-        # FIXME - need process groups!
-        self.process.terminate()
-
-    def kill(self):
-        # FIXME - need process groups!
-        self.process.kill()
+    def signal(self, signo):
+        os.killpg(self.process.pid, signo)
 
     @property
     def alive(self):
@@ -56,10 +51,13 @@ class Process(object):
         self.process = None
         return True
 
+    def set_process_group(self):
+        os.setsid()
+
     def spawn(self):
-        # FIXME - need process groups! (use preexec_fn)
         self.process = Popen(self.command, shell=True,
-                             stdin=dev_null, stdout=PIPE, stderr=STDOUT)
+                             stdin=dev_null, stdout=PIPE, stderr=STDOUT,
+                             preexec_fn=self.set_process_group)
         self.eof = False
         self.log('started with pid %d', self.process.pid)
 
@@ -121,6 +119,8 @@ class ProcessManager(object):
         pipes = dict((child.fileno(), child)
                      for child in self.children
                      if not child.eof)
+        if not pipes:
+            return []
         try:
             readable, _, _ = select(pipes.keys(), [], [], timeout)
         except SelectError:
@@ -145,14 +145,13 @@ class ProcessManager(object):
 
     def termination_handler(self, signo, frame):
         if self.shutdown:
-            self.log('sending SIGKILL to all children')
-            for p in self.children:
-                p.kill()
-
+            signo, name = SIGKILL, 'KILL'
         else:
-            self.log('sending SIGTERM to all children')
-            for p in self.children:
-                p.terminate()
+            signo, name = SIGTERM, 'TERM'
+
+        self.log('sending SIG%s to all children', name)
+        for child in self.children:
+            child.signal(signo)
 
         self.shutdown = True
 
