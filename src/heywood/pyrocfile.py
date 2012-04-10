@@ -47,7 +47,16 @@ class ProcessManager():
                 for r in rready:
                     p = fp_to_p[r]
                     logger = self.loggers[p.pid]
-                    logger.info(r.readline().rstrip())
+
+                    data = r.read(8192)
+                    if data == '':
+                        # This pipe is empty, remove it.
+                        rlist.remove(r)
+                        continue
+
+                    for line in data.strip('\n').split('\n'):
+                        if line.strip():
+                            logger.info(line)
         except select.error:
             pass
         finally:
