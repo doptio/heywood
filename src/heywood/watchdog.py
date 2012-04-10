@@ -77,6 +77,8 @@ def print_list(heading, elements):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
+    signal.signal(signal.SIGTERM, lambda signo, frame: os._exit(0))
+
     directories = sys.argv[1:]
     print_list('Watching', directories)
 

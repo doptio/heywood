@@ -19,7 +19,7 @@ def log(color_no, name, message):
     tag = '%8s' % name
     print color_on + stamp + tag + ' | ' + color_off + message
 
-class Process(object):
+class BaseProcess(object):
     'I keep track of one child.'
 
     def __init__(self, name, command, color_no):
@@ -46,7 +46,7 @@ class Process(object):
             self.log('killed by signal %d', -self.process.returncode)
         elif self.process.returncode > 0:
             self.log('exited with code %d', self.process.returncode)
-        else:
+        elif not isinstance(self, Daemon):
             self.log('exited normally')
 
         self.process = None
@@ -60,7 +60,8 @@ class Process(object):
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT,
                              preexec_fn=self.set_process_group)
         self.eof = False
-        self.log('started with pid %d', self.process.pid)
+        if not isinstance(self, Daemon):
+            self.log('started with pid %d', self.process.pid)
 
         # Make pipes non-blocking.
         fd = self.process.stdout.fileno()
@@ -88,11 +89,18 @@ class Process(object):
 
 system_color_no = 7
 
-class WatchdogProcess(Process):
+class Process(BaseProcess):
+    pass
+
+class Daemon(BaseProcess):
+    def __init__(self, name, command):
+        BaseProcess.__init__(self, name, command, system_color_no)
+
+class WatchdogProcess(Daemon):
     def __init__(self, directories):
         command = '{} -u -m heywood.watchdog {}'.format(sys.executable,
                                                         ' '.join(directories))
-        Process.__init__(self, 'watch', command, system_color_no)
+        Daemon.__init__(self, 'watch', command)
 
 class ProcessManager(object):
     'I keep track of ALL THE CHILDREN.'
@@ -154,19 +162,20 @@ class ProcessManager(object):
         self.reaping_needed = True
 
     def restart_handler(self, signo, frame):
-        self.signal_all(SIGTERM)
+        self.signal_all(SIGTERM, Process)
 
     def termination_handler(self, signo, frame):
         if self.shutdown:
-            self.signal_all(SIGKILL)
+            self.signal_all(SIGKILL, BaseProcess)
         else:
-            self.signal_all(SIGTERM)
+            self.signal_all(SIGTERM, BaseProcess)
         self.shutdown = True
 
-    def signal_all(self, signo):
+    def signal_all(self, signo, klass):
         self.log('sending signal %d to all children', signo)
         for child in self.children:
-            child.signal(signo)
+            if isinstance(child, klass):
+                child.signal(signo)
 
     def read_procfile(self, f):
         for i, line in enumerate(f):
