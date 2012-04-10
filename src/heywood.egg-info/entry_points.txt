@@ -1,0 +1,4 @@
+
+        [console_scripts]
+        heywood = heywood.main:console_script
+    
