@@ -2,8 +2,8 @@
 
 from __future__ import unicode_literals, division
 
+from datetime import datetime
 import fcntl
-from logging import getLogger, StreamHandler, Formatter, INFO
 import os
 from select import select
 from select import error as SelectError
@@ -12,13 +12,19 @@ from subprocess import Popen, PIPE, STDOUT
 
 dev_null = open('/dev/null', 'r')
 
+def log(color_no, name, message):
+    color_on, color_off = '\033[9%dm' % color_no, '\033[0m'
+    stamp = datetime.now().strftime('%H:%M:%S')
+    tag = '%8s' % name
+    print color_on + stamp + tag + ' | ' + color_off + message
+
 class Process(object):
     'I keep track of one child.'
 
     def __init__(self, name, command, color_no):
         self.name = name
         self.command = command
-        self.logger = _new_logger(name, color_no)
+        self.color_no = color_no
         self.process = None
         self.eof = False
 
@@ -54,25 +60,14 @@ class Process(object):
             self.eof = True
         return data
 
-    def log(self, *args):
-        self.logger.info(*args)
-
-def _new_logger(name, color=None):
-    logger = getLogger(name)
-    hdlr = StreamHandler()
-    color, end_color = '\033[9%dm' % (color), '\033[0m'
-    formatter = Formatter(color + '%(asctime)s %(name)20s |' + end_color + ' %(message)s')
-    hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr)
-    logger.setLevel(INFO)
-    return logger
+    def log(self, message, *args):
+        log(self.color_no, self.name, message % args)
 
 class ProcessManager(object):
     'I keep track of ALL THE CHILDREN.'
 
     def __init__(self):
         self.children = {}
-        self.syslogger = _new_logger('system', color=7)
 
     def go(self):
         self.install_signal_handlers()
@@ -82,7 +77,7 @@ class ProcessManager(object):
             self.loop()
 
         finally:
-            self.syslogger.info('sending SIGKILL to all children')
+            self.log('sending SIGKILL to all children')
             for p in self.children.values():
                 p.kill()
 
@@ -124,7 +119,7 @@ class ProcessManager(object):
         self.running = False
 
         # FIXME - escalate to SIGKILL after two attempts?
-        self.syslogger.info('sending SIGTERM to all children')
+        self.log('sending SIGTERM to all children')
         for p in self.children.values():
             p.terminate()
 
@@ -134,3 +129,6 @@ class ProcessManager(object):
             color_no = 1 + i % 6
             child = Process(name.strip(), command.strip(), color_no)
             self.children[name.strip()] = child
+
+    def log(self, message, *args):
+        log(7, 'system', message % args)
