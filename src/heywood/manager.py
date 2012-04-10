@@ -1,18 +1,23 @@
-# Pyrocfile - Simple Python impementation of Procfile manager
-# Written by Chris Testa (http://testa.co/) in 2011
-# Released in the Public Domain
+'I manager children.'
 
-import argparse, logging, os.path, random, re, select, signal, subprocess
+from __future__ import unicode_literals, division
+
 import fcntl
+from logging import getLogger, StreamHandler, Formatter, INFO
+import os
+from select import select
+from select import error as SelectError
+from signal import signal, SIGHUP, SIGTERM, SIGINT
+from subprocess import Popen, PIPE
 
 def _new_logger(name, color=None):
-    logger = logging.getLogger(name)
-    hdlr = logging.StreamHandler()
-    color, end_color = '\033[9%dm' % (color or random.randint(1, 6)), '\033[0m'
-    formatter = logging.Formatter(color + '%(asctime)s %(name)20s |' + end_color + ' %(message)s')
+    logger = getLogger(name)
+    hdlr = StreamHandler()
+    color, end_color = '\033[9%dm' % (color), '\033[0m'
+    formatter = Formatter(color + '%(asctime)s %(name)20s |' + end_color + ' %(message)s')
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(INFO)
     return logger
 
 class ProcessManager():
@@ -21,16 +26,14 @@ class ProcessManager():
         self.procfile = {}
         self.processes = []
         self.loggers = {
-            'system': _new_logger('system', color=9),
+            'system': _new_logger('system', color=7),
         }
 
     def start_all(self):
-        for id, command in self.procfile.items():
-            p = subprocess.Popen(command, shell=True,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
+        for i, (name, command) in enumerate(self.procfile.items()):
+            p = Popen(command, shell=True, stdout=PIPE, stderr=PIPE)
             self.processes.append(p)
-            self.loggers[p.pid] = logger = _new_logger(id)
+            self.loggers[p.pid] = logger = _new_logger(name, color=1 + i % 6)
             logger.info('started with pid %d', p.pid)
 
     def loop(self):
@@ -51,7 +54,7 @@ class ProcessManager():
         try:
             self.running = True
             while self.running:
-                rready, _, _ = select.select(rlist, [], [], 1)
+                rready, _, _ = select(rlist, [], [], 1)
                 for r in rready:
                     p = fp_to_p[r]
                     logger = self.loggers[p.pid]
@@ -66,7 +69,8 @@ class ProcessManager():
                     for line in data.strip('\n').split('\n'):
                         if line.strip():
                             logger.info(line)
-        except select.error:
+
+        except SelectError:
             pass
 
         finally:
@@ -80,22 +84,11 @@ class ProcessManager():
 
     def install_signal_handlers(self):
         # FIXME - need to reap zombies
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
-        signal.signal(signal.SIGHUP, self.signal_handler)
+        signal(SIGINT, self.signal_handler)
+        signal(SIGTERM, self.signal_handler)
+        signal(SIGHUP, self.signal_handler)
 
     def read_procfile(self, f):
         for line in f:
             name, command = line.strip().split(':', 1)
             self.procfile[name.strip()] = command.strip()
-
-def main():
-    manager = ProcessManager()
-    with open('Procfile') as f:
-        manager.read_procfile(f)
-    manager.install_signal_handlers()
-    manager.start_all()
-    manager.loop()
-
-if __name__ == '__main__':
-    main()

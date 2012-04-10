@@ -8,10 +8,18 @@ Knows a few extra tricks:
  * Restart all processes on file-changes (using pyinotify).
 '''
 
-from .pyrocfile import main
+from heywood.manager import ProcessManager
+
+def main():
+    manager = ProcessManager()
+    with open('Procfile') as f:
+        manager.read_procfile(f)
+    manager.install_signal_handlers()
+    manager.start_all()
+    manager.loop()
 
 def console_script():
     main()
 
 if __name__ == '__main__':
-    main()
+    console_script()
