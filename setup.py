@@ -12,7 +12,6 @@ setup(
         heywood = heywood.main:console_script
     ''',
     install_requires=[
-        'gevent == 0.13.6',
         'pyinotify == 0.9.3',
     ],
 )
