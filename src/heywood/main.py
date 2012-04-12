@@ -9,6 +9,7 @@ Knows a few extra tricks:
 '''
 
 from optparse import OptionParser
+import os
 
 from heywood.manager import ProcessManager
 
@@ -16,6 +17,9 @@ def main(watch):
     manager = ProcessManager()
     with open('Procfile') as f:
         manager.read_procfile(f)
+    if os.path.exists('.env'):
+        with open('.env') as f:
+            manager.read_env(f)
     if watch:
         manager.watch(watch)
     manager.go()

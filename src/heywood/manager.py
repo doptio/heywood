@@ -208,6 +208,11 @@ class ProcessManager(object):
             if isinstance(child, klass):
                 child.signal(signo)
 
+    def read_env(self, f):
+        for line in f:
+            name, value = line.split('=', 1)
+            os.environ[name.strip()] = value.strip()
+
     def read_procfile(self, f):
         for i, line in enumerate(f):
             name, command = line.strip().split(':', 1)
