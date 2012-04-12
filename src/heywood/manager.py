@@ -22,6 +22,9 @@ def log(color_no, name, message):
     tag = '%8s' % name
     print color_on + stamp + tag + ' | ' + color_off + message
 
+def parse_command(cmd):
+    return os.path.expandvars(cmd).split()
+
 class BaseProcess(object):
     'I keep track of one child.'
 
@@ -61,7 +64,7 @@ class BaseProcess(object):
         os.setsid()
 
     def spawn(self):
-        self.process = Popen(self.command.split(),
+        self.process = Popen(parse_command(self.command),
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT,
                              preexec_fn=self.set_process_group)
         self.eof = False
