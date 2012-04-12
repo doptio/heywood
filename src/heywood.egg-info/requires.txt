@@ -1,2 +1,1 @@
-gevent == 0.13.6
 pyinotify == 0.9.3
