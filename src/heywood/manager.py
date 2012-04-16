@@ -64,6 +64,9 @@ class BaseProcess(object):
         os.setsid()
 
     def spawn(self):
+        if self.process:
+            return
+
         self.process = Popen(parse_command(self.command),
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT,
                              preexec_fn=self.set_process_group)
