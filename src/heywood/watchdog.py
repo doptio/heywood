@@ -14,7 +14,10 @@ class GenericEventHandler(pyi.ProcessEvent):
     def __init__(self, watchdirs):
         self.manager = pyi.WatchManager()
         self.wmask = pyi.IN_CREATE | pyi.IN_MODIFY | pyi.IN_MOVED_TO
-        self.wpatterns = [re.compile('^[^.].*\.py$')]
+        self.wpatterns = [
+            re.compile('^[^.].*\.py$'),
+            re.compile('^[^.].*\.html$'),
+        ]
 
         for dirname in watchdirs:
             logger.debug('watch: %s', dirname)
