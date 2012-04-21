@@ -34,8 +34,10 @@ class BaseProcess(object):
         self.color_no = color_no
         self.process = None
         self.eof = False
+        self.signalled = False
 
     def signal(self, signo):
+        self.signalled = True
         if self.process:
             os.killpg(self.process.pid, signo)
 
@@ -70,6 +72,7 @@ class BaseProcess(object):
         self.process = Popen(parse_command(self.command),
                              stdin=dev_null, stdout=PIPE, stderr=STDOUT,
                              preexec_fn=self.set_process_group)
+        self.signalled = False
         self.eof = False
         if not isinstance(self, Daemon):
             self.log('started with pid %d', self.process.pid)
@@ -126,6 +129,7 @@ class ProcessManager(object):
         self.children = []
         self.deferred = []
         self.shutdown = False
+        self.auto_respawn = True
 
     def go(self):
         self.install_signal_handlers()
@@ -155,7 +159,9 @@ class ProcessManager(object):
         for child in self.children:
             if not child.alive:
                 child.reap()
-                if not self.shutdown:
+                if self.shutdown:
+                    continue
+                if self.auto_respawn or child.signalled:
                     self.defer(time() + 1, child.spawn)
 
         if self.shutdown:
@@ -186,13 +192,16 @@ class ProcessManager(object):
 
     def spawn_all(self):
         for child in self.children:
-            child.spawn()
+            if not child.alive:
+                child.spawn()
 
     def zombie_handler(self, signo, frame):
         self.defer(0, self.reap_zombies)
 
     def restart_all(self):
         self.signal_all(SIGTERM, Process)
+        self.log('re-spawning crashed children')
+        self.spawn_all()
 
     def restart_handler(self, signo, frame):
         self.defer(0, self.restart_all)
@@ -229,3 +238,4 @@ class ProcessManager(object):
 
     def watch(self, directories):
         self.children.append(WatchdogProcess(directories))
+        self.auto_respawn = False
