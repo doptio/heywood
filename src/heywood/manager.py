@@ -35,6 +35,7 @@ class BaseProcess(object):
         self.process = None
         self.eof = False
         self.signalled = False
+        self.buffered = None
 
     def signal(self, signo):
         self.signalled = True
@@ -59,7 +60,7 @@ class BaseProcess(object):
             elif not isinstance(self, Daemon):
                 self.log('exited normally')
 
-        self.process = None
+        self.process = self.buffered = None
         return True
 
     def set_process_group(self):
@@ -74,6 +75,7 @@ class BaseProcess(object):
                              preexec_fn=self.set_process_group)
         self.signalled = False
         self.eof = False
+        self.buffered = ''
         if not isinstance(self, Daemon):
             self.log('started with pid %d', self.process.pid)
 
@@ -98,7 +100,9 @@ class BaseProcess(object):
         if data == '':
             self.eof = True
 
-        for line in data.strip('\n').split('\n'):
+        self.buffered += data
+        while '\n' in self.buffered:
+            line, self.buffered = self.buffered.split('\n', 1)
             if line.strip():
                 self.log('%s', line)
 
