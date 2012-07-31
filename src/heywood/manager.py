@@ -220,8 +220,10 @@ class ProcessManager(object):
             if isinstance(child, klass):
                 child.signal(signo)
 
-    def read_env(self, f):
+    def setup_env(self):
         os.environ['PYTHONUNBUFFERED'] = 'true'
+
+    def read_env(self, f):
         for line in f:
             name, value = line.split('=', 1)
             os.environ[name.strip()] = value.strip()

@@ -17,6 +17,7 @@ def main(watch):
     manager = ProcessManager()
     with open('Procfile') as f:
         manager.read_procfile(f)
+    manager.setup_env()
     if os.path.exists('.env'):
         with open('.env') as f:
             manager.read_env(f)
