@@ -13,9 +13,9 @@ import os
 
 from heywood.manager import ProcessManager
 
-def main(watch):
+def main(procfile, watch):
     manager = ProcessManager()
-    with open('Procfile') as f:
+    with open(procfile) as f:
         manager.read_procfile(f)
     manager.setup_env()
     if os.path.exists('.env'):
@@ -27,10 +27,11 @@ def main(watch):
 
 def console_script():
     opts, args = parser.parse_args()
-    main(opts.watch)
+    main(opts.procfile, opts.watch)
 
 parser = OptionParser()
 parser.add_option('-w', '--watch', action='append', default=[])
+parser.add_option('-f', '--procfile', default='Procfile')
 
 if __name__ == '__main__':
     console_script()
