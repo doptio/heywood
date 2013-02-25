@@ -97,6 +97,7 @@ class BaseProcess(object):
         except IOError:
             return
 
+        data = data.decode('utf-8', 'replace')
         if data == '':
             self.eof = True
 
