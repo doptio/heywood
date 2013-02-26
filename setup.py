@@ -2,6 +2,15 @@
 
 from setuptools import setup, find_packages
 
+long_description = '''Pythonic Procfile runner
+
+Python port of the Ruby Procfile runner foreman, with a few twists:
+
+ * Does not force every process to run inside a shell.
+ * Restart process when one fails, instead of kill all others.
+ * Restart all processes on file-changes (using pyinotify).
+'''
+
 setup(
     name='heywood',
     version='0.2',
@@ -9,15 +18,8 @@ setup(
     maintainer_email='mig@ibofobi.dk',
     url='https://github.com/doptio/heywood/',
     license='MIT',
-    description='Pythonic Procfile runner',
-    long_description='''Python Procfile runner
-
-    Python port of the Ruby Procfile runner foreman, with a few twists:
-
-     * Does not force every process to run inside a shell.
-     * Restart process when one fails, instead of kill all others.
-     * Restart all processes on file-changes (using pyinotify).
-    ''',
+    description=long_description.split('\n')[0],
+    long_description=long_description,
     platforms=['POSIX'],
     classifiers=[
         'Development Status :: 4 - Beta',

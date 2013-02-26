@@ -6,14 +6,14 @@ Home-page: https://github.com/doptio/heywood/
 Author: Sune Kirkeby
 Author-email: mig@ibofobi.dk
 License: MIT
-Description: Python Procfile runner
+Description: Pythonic Procfile runner
         
-            Python port of the Ruby Procfile runner foreman, with a few twists:
+        Python port of the Ruby Procfile runner foreman, with a few twists:
         
-             * Does not force every process to run inside a shell.
-             * Restart process when one fails, instead of kill all others.
-             * Restart all processes on file-changes (using pyinotify).
-            
+         * Does not force every process to run inside a shell.
+         * Restart process when one fails, instead of kill all others.
+         * Restart all processes on file-changes (using pyinotify).
+        
 Platform: POSIX
 Classifier: Development Status :: 4 - Beta
 Classifier: Environment :: Console
