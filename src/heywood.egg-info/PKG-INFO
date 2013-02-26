@@ -1,10 +1,21 @@
-Metadata-Version: 1.0
+Metadata-Version: 1.1
 Name: heywood
-Version: 0.0.1
-Summary: UNKNOWN
-Home-page: UNKNOWN
-Author: UNKNOWN
-Author-email: UNKNOWN
-License: UNKNOWN
-Description: UNKNOWN
-Platform: UNKNOWN
+Version: 0.2
+Summary: Pythonic Procfile runner
+Home-page: https://github.com/doptio/heywood/
+Author: Sune Kirkeby
+Author-email: mig@ibofobi.dk
+License: MIT
+Description: Python Procfile runner
+        
+            Python port of the Ruby Procfile runner foreman, with a few twists:
+        
+             * Does not force every process to run inside a shell.
+             * Restart process when one fails, instead of kill all others.
+             * Restart all processes on file-changes (using pyinotify).
+            
+Platform: POSIX
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
