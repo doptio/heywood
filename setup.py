@@ -15,4 +15,3 @@ setup(
         'pyinotify == 0.9.3',
     ],
 )
-
