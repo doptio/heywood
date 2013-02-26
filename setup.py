@@ -27,6 +27,7 @@ setup(
     ],
     packages=find_packages('src'),
     package_dir={'': 'src'},
+    include_package_data=True,
     entry_points='''
         [console_scripts]
         heywood = heywood.main:console_script

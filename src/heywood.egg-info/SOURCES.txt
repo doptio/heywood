@@ -1,3 +1,8 @@
+.gitignore
+FIXME
+LICENSE
+MANIFEST.in
+README.md
 setup.py
 src/heywood/__init__.py
 src/heywood/main.py

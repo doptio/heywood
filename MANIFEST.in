@@ -1,0 +1,5 @@
+# FIXME - Is this really the best way to make setuptools understand, that if I
+# put a file in my repository, I probably want it included in a source
+# distribution?!
+recursive-include . *
+recursive-exclude . *~
