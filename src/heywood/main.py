@@ -5,7 +5,7 @@
 Knows a few extra tricks:
 
  * Restart process when one fails, instead of kill all others.
- * Restart all processes on file-changes (using pyinotify).
+ * Restart all processes on file-changes.
 '''
 
 from optparse import OptionParser

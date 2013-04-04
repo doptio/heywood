@@ -1,89 +1,80 @@
 '''Send gunicorn a HUP when .py files are changed.'''
 
+from __future__ import division, print_function, unicode_literals
+
 import logging
 import os
-import pyinotify as pyi
-import re
+from glob import glob
+from itertools import chain
 import signal
 import sys
 from threading import Timer
+from time import sleep
 
 logger = logging.getLogger('heywood.watchdog')
 
-class GenericEventHandler(pyi.ProcessEvent):
-    def __init__(self, watchdirs):
-        self.manager = pyi.WatchManager()
-        self.wmask = pyi.IN_CREATE | pyi.IN_MODIFY | pyi.IN_MOVED_TO
-        self.wpatterns = [
-            re.compile('^[^.].*\.py$'),
-            re.compile('^[^.].*\.html$'),
-        ]
 
-        for dirname in watchdirs:
-            logger.debug('watch: %s', dirname)
-            self.manager.add_watch(dirname, self.wmask, rec=True)
+def watch_paths(to_watch):
+    while True:
+        original_status = current_status = stat_paths(to_watch)
 
-    def loop(self):
-        notifier = pyi.Notifier(self.manager, self)
-        notifier.loop()
+        while original_status == current_status:
+            sleep(1.0)
+            current_status = stat_paths(to_watch)
 
-    def callback(self, event):
-        raise NotImplementedError('Override this')
+        changed = original_status.symmetric_difference(current_status)
+        print_list('Changed', set([path for path, stat in changed]))
 
-    def changed(self, event):
-        # Add new directories to watch
-        if event.dir and event.mask & pyi.IN_CREATE:
-            logger.debug('watch: %s', event.pathname)
-            self.manager.add_watch(event.pathname, self.wmask)
-            return
-
-        # Is this even interesting?
-        for r in self.wpatterns:
-            if r.match(event.name):
-                break
-        else:
-            return
-
-        logger.debug('change: %s %s', event.pathname, event.mask)
-        self.callback(event)
-
-    process_IN_CREATE = changed
-    process_IN_MODIFY = changed
-    process_IN_MOVED_TO = changed
-
-class GunicornHUP(GenericEventHandler):
-    def __init__(self, dirs):
-        GenericEventHandler.__init__(self, dirs)
-        self.wait_time = 250
-        self.timer = None
-        self.changed = set()
-
-    def kill_it_with_fire(self):
-        print_list('Changed', self.changed)
         print('HUP\'ping parent!')
-        self.changed = set()
         os.kill(os.getppid(), signal.SIGHUP)
 
-    def callback(self, event):
-        self.changed.add(event.path)
-        if self.timer:
-            self.timer.cancel()
-        self.timer = Timer(self.wait_time / 1000.0,
-                           self.kill_it_with_fire)
-        self.timer.start()
+
+def stat_paths(to_watch):
+    all = set()
+    for pattern in to_watch:
+        all.update((path, os.stat(path))
+                   for file_or_directory in super_glob(pattern)
+                   for path in all_files(file_or_directory))
+    return all
+
+
+def all_files(file_or_directory):
+    'return all files under file_or_directory.'
+    if os.path.isdir(file_or_directory):
+        return [os.path.join(dirname, filename)
+                for dirname, dirnames, filenames in os.walk(file_or_directory)
+                for filename in filenames]
+    else:
+        return [file_or_directory]
+
+
+def super_glob(pattern):
+    'glob that understands **/ for all sub-directories recursively.'
+    pieces = pattern.split('/')
+    if '**' in pieces:
+        prefix = '/'.join(pieces[:pieces.index('**')])
+        postfix = '/'.join(pieces[pieces.index('**') + 1:])
+        roots = [dirname
+                 for dirname, dirnames, filenames in os.walk(prefix)]
+        patterns = [root + '/' + postfix for root in roots]
+    else:
+        patterns = ['/'.join(pieces)]
+    return chain.from_iterable(glob(pattern) for pattern in patterns)
+
 
 def print_list(heading, elements):
     print(heading + ':')
     for e in elements:
         print('  * ' + e)
 
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
     signal.signal(signal.SIGTERM, lambda signo, frame: os._exit(0))
 
-    directories = sys.argv[1:]
-    print_list('Watching', directories)
+    to_watch = [os.path.expanduser(t.decode('utf-8'))
+                for t in sys.argv[1:]]
+    print_list('Watching', to_watch)
 
-    handler = GunicornHUP(directories)
-    handler.loop()
+    watch_paths(to_watch)

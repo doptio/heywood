@@ -8,12 +8,12 @@ Python port of the Ruby Procfile runner foreman, with a few twists:
 
  * Does not force every process to run inside a shell.
  * Restart process when one fails, instead of kill all others.
- * Restart all processes on file-changes (using pyinotify).
+ * Restart all processes on file-changes.
 '''
 
 setup(
     name='heywood',
-    version='0.2',
+    version='0.3',
     maintainer='Sune Kirkeby',
     maintainer_email='mig@ibofobi.dk',
     url='https://github.com/doptio/heywood/',
@@ -34,7 +34,4 @@ setup(
         [console_scripts]
         heywood = heywood.main:console_script
     ''',
-    install_requires=[
-        'pyinotify == 0.9.3',
-    ],
 )

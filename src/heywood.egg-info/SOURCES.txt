@@ -12,5 +12,4 @@ src/heywood.egg-info/PKG-INFO
 src/heywood.egg-info/SOURCES.txt
 src/heywood.egg-info/dependency_links.txt
 src/heywood.egg-info/entry_points.txt
-src/heywood.egg-info/requires.txt
 src/heywood.egg-info/top_level.txt
