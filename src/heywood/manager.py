@@ -20,7 +20,7 @@ def log(color_no, name, message):
     color_on, color_off = '\033[9%dm' % color_no, '\033[0m'
     stamp = datetime.now().strftime('%H:%M:%S')
     tag = '%8s' % name
-    print color_on + stamp + tag + ' | ' + color_off + message
+    print(color_on + stamp + tag + ' | ' + color_off + message)
 
 def parse_command(cmd):
     return os.path.expandvars(cmd).split()
