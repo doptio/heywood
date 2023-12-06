@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGTERM, lambda signo, frame: os._exit(0))
 
-    to_watch = [os.path.expanduser(t.decode('utf-8'))
+    to_watch = [os.path.expanduser(t)
                 for t in sys.argv[1:]]
     print_list('Watching', to_watch)
 
