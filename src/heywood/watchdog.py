@@ -32,10 +32,15 @@ def watch_paths(to_watch):
 def stat_paths(to_watch):
     all = set()
     for pattern in to_watch:
-        all.update((path, os.stat(path))
+        all.update((path, stat_path(path))
                    for file_or_directory in super_glob(pattern)
                    for path in all_files(file_or_directory))
     return all
+
+
+def stat_path(p):
+    st = os.stat(p)
+    return (st.st_ino, st.st_size, st.st_mtime)
 
 
 def all_files(file_or_directory):
