@@ -13,7 +13,7 @@ Python port of the Ruby Procfile runner foreman, with a few twists:
 
 setup(
     name='heywood',
-    version='0.3',
+    version='0.4',
     maintainer='Sune Kirkeby',
     maintainer_email='mig@ibofobi.dk',
     url='https://github.com/doptio/heywood/',
